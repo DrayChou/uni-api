@@ -36,7 +36,7 @@ class RequestModel(BaseModel):
     messages: List[Message]
     logprobs: Optional[bool] = None
     top_logprobs: Optional[int] = None
-    stream: Optional[bool] = None
+    stream: Optional[bool] = False
     include_usage: Optional[bool] = None
     temperature: Optional[float] = 0.5
     top_p: Optional[float] = 1.0

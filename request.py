@@ -2,13 +2,14 @@ import json
 from models import RequestModel
 from log_config import logger
 
-async def get_image_message(base64_image, engine = None):
+
+async def get_image_message(base64_image, engine=None):
     if "gpt" == engine:
         return {
             "type": "image_url",
             "image_url": {
                 "url": base64_image,
-            }
+            },
         }
     if "claude" == engine:
         return {
@@ -17,7 +18,7 @@ async def get_image_message(base64_image, engine = None):
                 "type": "base64",
                 "media_type": "image/jpeg",
                 "data": base64_image.split(",")[1],
-            }
+            },
         }
     if "gemini" == engine:
         return {
@@ -28,22 +29,22 @@ async def get_image_message(base64_image, engine = None):
         }
     raise ValueError("Unknown engine")
 
-async def get_text_message(role, message, engine = None):
+
+async def get_text_message(role, message, engine=None):
     if "gpt" == engine or "claude" == engine or "openrouter" == engine:
         return {"type": "text", "text": message}
     if "gemini" == engine:
         return {"text": message}
     raise ValueError("Unknown engine")
 
+
 async def get_gemini_payload(request, engine, provider):
-    headers = {
-        'Content-Type': 'application/json'
-    }
-    url = provider['base_url']
-    model = provider['model'][request.model]
+    headers = {"Content-Type": "application/json"}
+    url = provider["base_url"]
+    model = provider["model"][request.model]
     if request.stream:
         gemini_stream = "streamGenerateContent"
-    url = url.format(model=model, stream=gemini_stream, api_key=provider['api'])
+    url = url.format(model=model, stream=gemini_stream, api_key=provider["api"])
 
     messages = []
     systemInstruction = None
@@ -67,47 +68,34 @@ async def get_gemini_payload(request, engine, provider):
         if msg.role == "system":
             systemInstruction = {"parts": content}
 
-
     payload = {
         "contents": messages,
         "safetySettings": [
-            {
-                "category": "HARM_CATEGORY_HARASSMENT",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_HATE_SPEECH",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                "threshold": "BLOCK_NONE"
-            }
-        ]
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        ],
     }
     if systemInstruction:
         payload["systemInstruction"] = systemInstruction
 
     miss_fields = [
-        'model',
-        'messages',
-        'stream',
-        'tools',
-        'tool_choice',
-        'temperature',
-        'top_p',
-        'max_tokens',
-        'presence_penalty',
-        'frequency_penalty',
-        'n',
-        'user',
-        'include_usage',
-        'logprobs',
-        'top_logprobs'
+        "model",
+        "messages",
+        "stream",
+        "tools",
+        "tool_choice",
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "presence_penalty",
+        "frequency_penalty",
+        "n",
+        "user",
+        "include_usage",
+        "logprobs",
+        "top_logprobs",
     ]
 
     for field, value in request.model_dump(exclude_unset=True).items():
@@ -116,13 +104,12 @@ async def get_gemini_payload(request, engine, provider):
 
     return url, headers, payload
 
+
 async def get_gpt_payload(request, engine, provider):
-    headers = {
-        'Content-Type': 'application/json'
-    }
+    headers = {"Content-Type": "application/json"}
     if provider.get("api"):
-        headers['Authorization'] = f"Bearer {provider['api']}"
-    url = provider['base_url']
+        headers["Authorization"] = f"Bearer {provider['api']}"
+    url = provider["base_url"]
 
     messages = []
     for msg in request.messages:
@@ -144,16 +131,13 @@ async def get_gpt_payload(request, engine, provider):
         else:
             messages.append({"role": msg.role, "content": content})
 
-    model = provider['model'][request.model]
+    model = provider["model"][request.model]
     payload = {
         "model": model,
         "messages": messages,
     }
 
-    miss_fields = [
-        'model',
-        'messages'
-    ]
+    miss_fields = ["model", "messages"]
 
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
@@ -165,14 +149,13 @@ async def get_gpt_payload(request, engine, provider):
 
     return url, headers, payload
 
-async def get_openrouter_payload(request, engine, provider):
-    headers = {
-        'Content-Type': 'application/json'
-    }
-    if provider.get("api"):
-        headers['Authorization'] = f"Bearer {provider['api']}"
 
-    url = provider['base_url']
+async def get_openrouter_payload(request, engine, provider):
+    headers = {"Content-Type": "application/json"}
+    if provider.get("api"):
+        headers["Authorization"] = f"Bearer {provider['api']}"
+
+    url = provider["base_url"]
 
     messages = []
     for msg in request.messages:
@@ -202,27 +185,27 @@ async def get_openrouter_payload(request, engine, provider):
             else:
                 messages.append({"role": msg.role, "content": content})
 
-    model = provider['model'][request.model]
+    model = provider["model"][request.model]
     payload = {
         "model": model,
         "messages": messages,
     }
 
     miss_fields = [
-        'model',
-        'messages',
-        'tools',
-        'tool_choice',
-        'temperature',
-        'top_p',
-        'max_tokens',
-        'presence_penalty',
-        'frequency_penalty',
-        'n',
-        'user',
-        'include_usage',
-        'logprobs',
-        'top_logprobs'
+        "model",
+        "messages",
+        "tools",
+        "tool_choice",
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "presence_penalty",
+        "frequency_penalty",
+        "n",
+        "user",
+        "include_usage",
+        "logprobs",
+        "top_logprobs",
     ]
 
     for field, value in request.model_dump(exclude_unset=True).items():
@@ -231,8 +214,10 @@ async def get_openrouter_payload(request, engine, provider):
 
     return url, headers, payload
 
+
 async def gpt2claude_tools_json(json_dict):
     import copy
+
     json_dict = copy.deepcopy(json_dict)
     keys_to_change = {
         "parameters": "input_schema",
@@ -249,15 +234,20 @@ async def gpt2claude_tools_json(json_dict):
     #     }
     return json_dict
 
+
 async def get_claude_payload(request, engine, provider):
-    model = provider['model'][request.model]
+    model = provider["model"][request.model]
     headers = {
         "content-type": "application/json",
         "x-api-key": f"{provider['api']}",
         "anthropic-version": "2023-06-01",
-        "anthropic-beta": "max-tokens-3-5-sonnet-2024-07-15" if "claude-3-5-sonnet" in model else "tools-2024-05-16",
+        "anthropic-beta": (
+            "max-tokens-3-5-sonnet-2024-07-15"
+            if "claude-3-5-sonnet" in model
+            else "tools-2024-05-16"
+        ),
     }
-    url = provider['base_url']
+    url = provider["base_url"]
 
     messages = []
     system_prompt = None
@@ -290,7 +280,7 @@ async def get_claude_payload(request, engine, provider):
                             "name": name,
                             "input": arguments,
                         }
-                    ]
+                    ],
                 }
             )
             messages.append(
@@ -300,9 +290,9 @@ async def get_claude_payload(request, engine, provider):
                         {
                             "type": "tool_result",
                             "tool_use_id": "toolu_01RofFmKHUKsEaZvqESG5Hwz",
-                            "content": content
+                            "content": content,
                         }
-                    ]
+                    ],
                 }
             )
         elif msg.role != "system":
@@ -316,33 +306,42 @@ async def get_claude_payload(request, engine, provider):
         if messages[message_index]["role"] == messages[message_index + 1]["role"]:
             if messages[message_index].get("content"):
                 if isinstance(messages[message_index]["content"], list):
-                    messages[message_index]["content"].extend(messages[message_index + 1]["content"])
-                elif isinstance(messages[message_index]["content"], str) and isinstance(messages[message_index + 1]["content"], list):
-                    content_list = [{"type": "text", "text": messages[message_index]["content"]}]
+                    messages[message_index]["content"].extend(
+                        messages[message_index + 1]["content"]
+                    )
+                elif isinstance(messages[message_index]["content"], str) and isinstance(
+                    messages[message_index + 1]["content"], list
+                ):
+                    content_list = [
+                        {"type": "text", "text": messages[message_index]["content"]}
+                    ]
                     content_list.extend(messages[message_index + 1]["content"])
                     messages[message_index]["content"] = content_list
                 else:
-                    messages[message_index]["content"] += messages[message_index + 1]["content"]
+                    messages[message_index]["content"] += messages[message_index + 1][
+                        "content"
+                    ]
             messages.pop(message_index + 1)
             conversation_len = conversation_len - 1
         else:
             message_index = message_index + 1
 
-    model = provider['model'][request.model]
+    model = provider["model"][request.model]
     payload = {
         "model": model,
         "messages": messages,
-        "system": system_prompt or "You are Claude, a large language model trained by Anthropic.",
+        "system": system_prompt
+        or "You are Claude, a large language model trained by Anthropic.",
     }
 
     miss_fields = [
-        'model',
-        'messages',
-        'presence_penalty',
-        'frequency_penalty',
-        'n',
-        'user',
-        'include_usage',
+        "model",
+        "messages",
+        "presence_penalty",
+        "frequency_penalty",
+        "n",
+        "user",
+        "include_usage",
     ]
 
     for field, value in request.model_dump(exclude_unset=True).items():
@@ -357,9 +356,7 @@ async def get_claude_payload(request, engine, provider):
             tools.append(json_tool)
         payload["tools"] = tools
         if "tool_choice" in payload:
-            payload["tool_choice"] = {
-                "type": "auto"
-            }
+            payload["tool_choice"] = {"type": "auto"}
 
     if provider.get("tools") == False:
         payload.pop("tools", None)
@@ -368,6 +365,7 @@ async def get_claude_payload(request, engine, provider):
     # print("payload", json.dumps(payload, indent=2, ensure_ascii=False))
 
     return url, headers, payload
+
 
 async def get_payload(request: RequestModel, engine, provider):
     if engine == "gemini":
