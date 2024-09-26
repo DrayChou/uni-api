@@ -16,7 +16,7 @@ def api_key():
 
 @pytest.fixture
 def get_model():
-    return os.environ.get("MODEL", "claude-3-5-sonnet-20240620")
+    return os.environ.get("MODEL", "claude-3-5-sonnet")
 
 def test_request_model(test_client, api_key, get_model):
     request_data = {
@@ -70,16 +70,18 @@ def test_request_model(test_client, api_key, get_model):
                     }
                 }
             }
-        ]
+        ],
+        "tool_choice": "auto"
     }
 
     headers = {
+        'Content-Type': 'application/json',
         "Authorization": f"Bearer {api_key}"
     }
 
     response = test_client.post("/v1/chat/completions", json=request_data, headers=headers)
     for line in response.iter_lines():
-        print(line)
+        print(line.lstrip("data: "))
     assert response.status_code == 200
 
 if __name__ == "__main__":

@@ -5,5 +5,5 @@ logging.basicConfig(
 )
 logger = logging.getLogger("uni-api")
 
-httpx_logger = logging.getLogger("httpx")
-httpx_logger.setLevel(logging.CRITICAL)
+logging.getLogger("httpx").setLevel(logging.CRITICAL)
+logging.getLogger("watchfiles.main").setLevel(logging.CRITICAL)
