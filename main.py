@@ -17,6 +17,7 @@ from models import (
     ImageGenerationRequest,
     AudioTranscriptionRequest,
     ModerationRequest,
+    UnifiedRequest,
 )
 from request import get_payload
 from response import fetch_response, fetch_response_stream
@@ -33,8 +34,10 @@ from typing import List, Dict, Union
 from urllib.parse import urlparse
 
 import os
+import string
+import json
 
-is_debug = bool(os.getenv("DEBUG", True))
+is_debug = bool(os.getenv("DEBUG", False))
 
 from sqlalchemy import inspect, text
 from sqlalchemy.sql import sqltypes
@@ -196,33 +199,29 @@ async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False
 class StatsMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
-        self.db = async_session()
 
     async def dispatch(self, request: Request, call_next):
+        start_time = time()
+
+        endpoint = f"{request.method} {request.url.path}"
+        client_ip = request.client.host
+
+        model = "unknown"
+        is_flagged = False
+        moderated_content = ""
+        enable_moderation = False  # 默认不开启道德审查
+
+        config = app.state.config
+        # 根据token决定是否启用道德审查
         if request.headers.get("x-api-key"):
             token = request.headers.get("x-api-key")
         elif request.headers.get("Authorization"):
             token = request.headers.get("Authorization").split(" ")[1]
         else:
             token = None
-
-        start_time = time()
-
-        request.state.parsed_body = await parse_request_body(request)
-        endpoint = f"{request.method} {request.url.path}"
-        client_ip = request.client.host
-
-        model = "unknown"
-        enable_moderation = False  # 默认不开启道德审查
-        is_flagged = False
-        moderated_content = ""
-
-        config = app.state.config
-        api_list = app.state.api_list
-
-        # 根据token决定是否启用道德审查
         if token:
             try:
+                api_list = app.state.api_list
                 api_index = api_list.index(token)
                 enable_moderation = safe_get(
                     config,
@@ -239,11 +238,16 @@ class StatsMiddleware(BaseHTTPMiddleware):
             # 如果token为None，检查全局设置
             enable_moderation = config.get("ENABLE_MODERATION", False)
 
-        if request.state.parsed_body:
+        parsed_body = await parse_request_body(request)
+        if parsed_body:
             try:
-                request_model = RequestModel(**request.state.parsed_body)
+                request_model = UnifiedRequest.model_validate(parsed_body).data
                 model = request_model.model
-                moderated_content = request_model.get_last_text_message()
+
+                if request_model.request_type == "chat":
+                    moderated_content = request_model.get_last_text_message()
+                elif request_model.request_type == "image":
+                    moderated_content = request_model.prompt
 
                 if enable_moderation and moderated_content:
                     moderation_response = await self.moderate_content(
@@ -312,32 +316,42 @@ class StatsMiddleware(BaseHTTPMiddleware):
         is_flagged,
         moderated_content,
     ):
-        async with self.db as session:
-            new_request_stat = RequestStat(
-                endpoint=endpoint,
-                ip=client_ip,
-                token=token,
-                total_time=process_time,
-                model=model,
-                is_flagged=is_flagged,
-                moderated_content=moderated_content,
-            )
-            session.add(new_request_stat)
-            await session.commit()
+        async with async_session() as session:
+            async with session.begin():
+                try:
+                    new_request_stat = RequestStat(
+                        endpoint=endpoint,
+                        ip=client_ip,
+                        token=token,
+                        total_time=process_time,
+                        model=model,
+                        is_flagged=is_flagged,
+                        moderated_content=moderated_content,
+                    )
+                    session.add(new_request_stat)
+                    await session.commit()
+                except Exception as e:
+                    await session.rollback()
+                    logger.error(f"Error updating stats: {str(e)}")
 
     async def update_channel_stats(
         self, provider, model, api_key, success, first_response_time
     ):
-        async with self.db as session:
-            channel_stat = ChannelStat(
-                provider=provider,
-                model=model,
-                api_key=api_key,
-                success=success,
-                first_response_time=first_response_time,
-            )
-            session.add(channel_stat)
-            await session.commit()
+        async with async_session() as session:
+            async with session.begin():
+                try:
+                    channel_stat = ChannelStat(
+                        provider=provider,
+                        model=model,
+                        api_key=api_key,
+                        success=success,
+                        first_response_time=first_response_time,
+                    )
+                    session.add(channel_stat)
+                    await session.commit()
+                except Exception as e:
+                    await session.rollback()
+                    logger.error(f"Error updating channel stats: {str(e)}")
 
     async def moderate_content(self, content, token):
         moderation_request = ModerationRequest(input=content)
@@ -593,16 +607,15 @@ class ModelRequestHandler:
                 #         if model_name in provider['model'].keys():
                 #             provider_list.append(provider)
         if is_debug:
-            import json
-
             for provider in provider_list:
-                print(
+                logger.info(
+                    "available provider: %s",
                     json.dumps(
                         provider,
                         indent=4,
                         ensure_ascii=False,
                         default=circular_list_encoder,
-                    )
+                    ),
                 )
         return provider_list
 
@@ -851,15 +864,7 @@ def verify_admin_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
 
 
 @app.post("/v1/chat/completions", dependencies=[Depends(rate_limit_dependency)])
-async def request_model(
-    request: Union[
-        RequestModel,
-        ImageGenerationRequest,
-        AudioTranscriptionRequest,
-        ModerationRequest,
-    ],
-    token: str = Depends(verify_api_key),
-):
+async def request_model(request: RequestModel, token: str = Depends(verify_api_key)):
     # logger.info(f"Request received: {request}")
     return await model_handler.request_model(request, token)
 
@@ -926,7 +931,11 @@ async def audio_transcriptions(
 
 @app.get("/generate-api-key", dependencies=[Depends(rate_limit_dependency)])
 def generate_api_key():
-    api_key = "sk-" + secrets.token_urlsafe(36)
+    # Define the character set (only alphanumeric)
+    chars = string.ascii_letters + string.digits
+    # Generate a random string of 36 characters
+    random_string = "".join(secrets.choice(chars) for _ in range(36))
+    api_key = "sk-" + random_string
     return JSONResponse(content={"api_key": api_key})
 
 

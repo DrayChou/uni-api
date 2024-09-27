@@ -1,61 +1,45 @@
 from io import IOBase
-from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Union, Tuple
+from pydantic import BaseModel, Field, model_validator
+from typing import List, Dict, Optional, Union, Tuple, Literal
 
-class ImageGenerationRequest(BaseModel):
-    model: str
-    prompt: str
-    n: int
-    size: str
-    stream: bool = False
-
-class AudioTranscriptionRequest(BaseModel):
-    file: Tuple[str, IOBase, str]
-    model: str
-    language: Optional[str] = None
-    prompt: Optional[str] = None
-    response_format: Optional[str] = None
-    temperature: Optional[float] = None
-    stream: bool = False
-
-    class Config:
-        arbitrary_types_allowed = True
-
-class ModerationRequest(BaseModel):
-    input: str
-    model: Optional[str] = "text-moderation-latest"
-    stream: bool = False
 
 class FunctionParameter(BaseModel):
     type: str
     properties: Dict[str, Dict[str, Union[str, Dict[str, str]]]]
     required: List[str]
 
+
 class Function(BaseModel):
     name: str
     description: str
     parameters: Optional[FunctionParameter] = Field(default=None, exclude=None)
 
+
 class Tool(BaseModel):
     type: str
     function: Function
 
+
 class FunctionCall(BaseModel):
     name: str
     arguments: str
+
 
 class ToolCall(BaseModel):
     id: str
     type: str
     function: FunctionCall
 
+
 class ImageUrl(BaseModel):
     url: str
+
 
 class ContentItem(BaseModel):
     type: str
     text: Optional[str] = None
     image_url: Optional[ImageUrl] = None
+
 
 class Message(BaseModel):
     role: str
@@ -63,6 +47,7 @@ class Message(BaseModel):
     arguments: Optional[str] = None
     content: Optional[Union[str, List[ContentItem]]] = None
     tool_calls: Optional[List[ToolCall]] = None
+
 
 class Message(BaseModel):
     role: str
@@ -74,14 +59,18 @@ class Message(BaseModel):
     class Config:
         extra = "allow"  # 允许额外的字段
 
+
 class FunctionChoice(BaseModel):
     name: str
+
 
 class ToolChoice(BaseModel):
     type: str
     function: Optional[FunctionChoice] = None
 
+
 class RequestModel(BaseModel):
+    request_type: Literal["chat"] = "chat"
     model: str
     messages: List[Message]
     logprobs: Optional[bool] = None
@@ -108,3 +97,62 @@ class RequestModel(BaseModel):
                         if item.type == "text" and item.text:
                             return item.text
         return ""
+
+
+class ImageGenerationRequest(BaseModel):
+    request_type: Literal["image"] = "image"
+    prompt: str
+    model: Optional[str] = "dall-e-3"
+    n: Optional[int] = 1
+    size: Optional[str] = "1024x1024"
+    stream: bool = False
+
+
+class AudioTranscriptionRequest(BaseModel):
+    request_type: Literal["audio"] = "audio"
+    file: Tuple[str, IOBase, str]
+    model: str
+    language: Optional[str] = None
+    prompt: Optional[str] = None
+    response_format: Optional[str] = None
+    temperature: Optional[float] = None
+    stream: bool = False
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class ModerationRequest(BaseModel):
+    request_type: Literal["moderation"] = "moderation"
+    input: str
+    model: Optional[str] = "text-moderation-latest"
+    stream: bool = False
+
+
+class UnifiedRequest(BaseModel):
+    data: Union[
+        RequestModel,
+        ImageGenerationRequest,
+        AudioTranscriptionRequest,
+        ModerationRequest,
+    ] = Field(..., discriminator="request_type")
+
+    @model_validator(mode="before")
+    @classmethod
+    def set_request_type(cls, values):
+        if isinstance(values, dict):
+            if "messages" in values:
+                values["request_type"] = "chat"
+                values["data"] = RequestModel(**values)
+            elif "prompt" in values:
+                values["request_type"] = "image"
+                values["data"] = ImageGenerationRequest(**values)
+            elif "file" in values:
+                values["request_type"] = "audio"
+                values["data"] = AudioTranscriptionRequest(**values)
+            elif "input" in values:
+                values["request_type"] = "moderation"
+                values["data"] = ModerationRequest(**values)
+            else:
+                raise ValueError("无法确定请求类型")
+        return values

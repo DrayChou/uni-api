@@ -190,6 +190,7 @@ def post_all_models(token, config, api_list):
     if config["api_keys"][api_index]["model"]:
         for model in config["api_keys"][api_index]["model"]:
             if model == "*":
+                # 如果模型名为 *，则返回所有模型
                 all_models = get_all_models(config)
                 return all_models
 
